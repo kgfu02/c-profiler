@@ -10,6 +10,7 @@ int main() {
     double elapsed_time;
 
     clock_gettime(CLOCK_MONOTONIC, &start);
+    printf("Sleeping!\n");
     sleep(5);
     printf("Done sleeping!\n");
     clock_gettime(CLOCK_MONOTONIC, &end);
