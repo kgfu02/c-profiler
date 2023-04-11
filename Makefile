@@ -9,10 +9,10 @@ test: test.c
 
 debug: profiler-debug test-debug
 
-profiler-debug:
+profiler-debug: profiler.c
 	gcc -g profiler.c -o profiler-debug
 
-test-debug:
+test-debug: test.c
 	gcc -g test.c -o test-debug
 
 clean:
