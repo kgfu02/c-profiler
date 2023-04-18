@@ -9,6 +9,9 @@ test: test.c
 
 debug: profiler-debug test-debug
 
+sandbox: sandbox.c
+	gcc sandbox.c -o sandbox
+
 profiler-debug: profiler.c
 	gcc -g profiler.c -o profiler-debug
 
