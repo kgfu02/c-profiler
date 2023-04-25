@@ -3,3 +3,5 @@ test-debug
 test
 profiler-debug
 .vscode/launch.json
+sandbox
+sandbox.c

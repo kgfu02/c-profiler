@@ -14,8 +14,9 @@
             ],
             "request": "launch",
             "cwd": ".",
-            "program": "/Users/kevin/Desktop/projects/c-profiler/profiler-debug",
-            "args": [],
+            "program": "/home/kevingf2/c-profiler/profiler-debug",
+            "args": ["test"],
+            "preLaunchTask": "make"
         },
     ],
 }
