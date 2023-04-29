@@ -14,7 +14,7 @@
 #include <search.h>
 #include "includes/dictionary.h"
 
-#define MS_BETWEEN_SAMPLES 1000
+#define MS_BETWEEN_SAMPLES 100
 
 static pid_t child_pid;
 static int status;
@@ -93,14 +93,12 @@ void sample(pid_t child_pid) {
     ts.tv_sec = MS_BETWEEN_SAMPLES / 1000;
     ts.tv_nsec = (MS_BETWEEN_SAMPLES % 1000) * 1000000;
     while (true) {
-        kill(child_pid, SIGSTOP);
-        if(waitpid(child_pid, &status, WNOHANG) == -1)
-            perror("wait:");
+        if (kill(child_pid, SIGSTOP) == -1) perror("kill");
+        if (waitpid(child_pid, &status, 0) == -1) perror("wait");
         if (WIFEXITED(status))
             return;
-        else if (!WIFSTOPPED(status))
-            waitpid(child_pid, &status, 0);
-        ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+        if (ptrace(PTRACE_GETREGS, child_pid, NULL, &regs) == -1)
+            perror("GETREGS");
         printf("Child PC = %p\n", (void*)(regs.rip - load_addr));
         char* func = get_function_from_pc(regs.rip);
         if (func != NULL) {
@@ -157,15 +155,15 @@ int main(int argc, char** argv) {
         // Tell child to not stop at system calls?
         ptrace(PTRACE_SETOPTIONS, child_pid, NULL, PTRACE_O_TRACESYSGOOD);
         // Continue through exec call
-        ptrace(PTRACE_CONT, child_pid, NULL, SIGCONT);
+        if (ptrace(PTRACE_CONT, child_pid, NULL, SIGCONT) == -1) perror("CONT");
         sleep(1);
         sample(child_pid);
         vector* function_names = dictionary_keys(function_dict);
         for (int i = 0; i < (int)vector_size(function_names); i++) {
             char* func = vector_get(function_names, i);
-            printf("%s: %f%%\n", func,
+            printf("%-10s %.2f%%\n", func,
                    (*(int*)dictionary_get(function_dict, func) / total_samples *
-                       100) * 10000000 / 10000000);
+                    100));
         }
     }
     return 0;
