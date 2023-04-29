@@ -12,6 +12,7 @@
         "string": "c",
         "string_view": "c",
         "unordered_map": "c",
-        "vector": "c"
+        "vector": "c",
+        "stdlib.h": "c"
     }
 }

@@ -11,15 +11,17 @@
 #include <libdwarf/dwarf.h>
 #include <sys/personality.h>
 #include <string.h>
+#include <search.h>
+#include "includes/dictionary.h"
 
-#define SAMPLE_HZ 2
+#define MS_BETWEEN_SAMPLES 1000
 
-struct user_regs_struct regs;
-struct timespec start;
-pid_t child_pid;
-int status;
-char* filename;
-unsigned long long load_addr = 0;
+static pid_t child_pid;
+static int status;
+static char* filename;
+static unsigned long long load_addr = 0;
+static dictionary* function_dict;
+static double total_samples = 0;
 
 void initialise_load_address(int pid) {
     // Assume position independent executable PIE
@@ -68,9 +70,9 @@ char* get_function_from_pc(unsigned long long pc) {
             char* function;
             Dwarf_Attribute attr;
             dwarf_attr(child_die, DW_AT_name, &attr, &error);
-            if (pc <= high_pc && pc >= low_pc && dwarf_formstring(attr, &function, &error) == DW_DLV_OK) {
-                
-                char* copy = malloc(strlen(function)+1);
+            if (pc <= high_pc && pc >= low_pc &&
+                dwarf_formstring(attr, &function, &error) == DW_DLV_OK) {
+                char* copy = malloc(strlen(function) + 1);
                 strcpy(copy, function);
                 dwarf_dealloc(dbg, function, DW_DLA_STRING);
                 dwarf_finish(dbg, &error);
@@ -84,37 +86,57 @@ char* get_function_from_pc(unsigned long long pc) {
     return NULL;
 }
 
-double get_elapsed_time() {
-    struct timespec end;
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    return (end.tv_sec - start.tv_sec) +
-           (double)(end.tv_nsec - start.tv_nsec) / 1000000000.0;
-}
-
 // periodically pauses child and print program counter
-void sample(pid_t pid) {
-    int ms_between_samples = 1.0 / SAMPLE_HZ * 1000;
+void sample(pid_t child_pid) {
+    struct user_regs_struct regs;
     struct timespec ts;
-    ts.tv_sec = ms_between_samples / 1000;
-    ts.tv_nsec = (ms_between_samples % 1000) * 1000000;
-    for (int i = 0; i < 10; i++) {
-        ptrace(PTRACE_INTERRUPT, pid, NULL, NULL);
-        waitpid(pid, &status, 0);
-        ptrace(PTRACE_GETREGS, pid, NULL, &regs);
-        sleep(10);
-        ptrace(PTRACE_CONT, pid, NULL, NULL);
-        printf("Child PC: %llx\n", regs.rip);
+    ts.tv_sec = MS_BETWEEN_SAMPLES / 1000;
+    ts.tv_nsec = (MS_BETWEEN_SAMPLES % 1000) * 1000000;
+    while (true) {
+        kill(child_pid, SIGSTOP);
+        if(waitpid(child_pid, &status, WNOHANG) == -1)
+            perror("wait:");
+        if (WIFEXITED(status))
+            return;
+        else if (!WIFSTOPPED(status))
+            waitpid(child_pid, &status, 0);
+        ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
+        printf("Child PC = %p\n", (void*)(regs.rip - load_addr));
+        char* func = get_function_from_pc(regs.rip);
+        if (func != NULL) {
+            // printf("%d, %d\n", WIFSIGNALED(status), WTERMSIG(status));
+            printf("Function name = %s\n\n", func);
+            if (!dictionary_contains(function_dict, func)) {
+                int one = 1;
+                // char* copy = malloc(strlen(func)+1);
+                // strcpy(copy, func);
+                dictionary_set(function_dict, func, &one);
+            } else {
+                int increment_value =
+                    *(int*)dictionary_get(function_dict, func) + 1;
+                dictionary_set(function_dict, func, &increment_value);
+            }
+            total_samples++;
+            free(func);
+        } else {
+            printf("Function name not found\n\n");
+        }
+        // if(waitpid(child_pid, &status, WNOHANG) == -1)
+        //     perror("wait:");
+        // printf("%d, %d\n", WIFSIGNALED(status), WTERMSIG(status));
+        ptrace(PTRACE_CONT, child_pid, NULL, SIGCONT);
         nanosleep(&ts, &ts);
     }
 }
 
 int main(int argc, char** argv) {
-    if(argc == 1) {
-        printf("Usage: ./profiler <target exec>\n");
+    if (argc == 1) {
+        printf("Usage: ./profiler <target exec> <args...>\n");
         exit(1);
     }
+    // setup
     filename = argv[1];
-    // get_function_from_pc(0);
+    function_dict = string_to_int_dictionary_create();
     child_pid = fork();
     if (child_pid == -1) {
         perror("fork");
@@ -124,36 +146,27 @@ int main(int argc, char** argv) {
     if (child_pid == 0) {
         // Child process
         personality(ADDR_NO_RANDOMIZE);
-        ptrace(PTRACE_TRACEME);
-        execl(filename, filename, NULL);
+        ptrace(PTRACE_TRACEME, NULL, NULL, NULL);
+        execv(filename, argv + 1);
         exit(1);
     } else {
         // Parent process
         // Wait for child to stop at exec call
         wait(&status);
         initialise_load_address(child_pid);
-        // Tell child to not stop at system calls
+        // Tell child to not stop at system calls?
         ptrace(PTRACE_SETOPTIONS, child_pid, NULL, PTRACE_O_TRACESYSGOOD);
         // Continue through exec call
-        ptrace(PTRACE_CONT, child_pid);
+        ptrace(PTRACE_CONT, child_pid, NULL, SIGCONT);
         sleep(1);
-        struct user_regs_struct regs;
-        for (int i = 0; i < 10; i++) {
-            kill(child_pid, SIGSTOP);
-            waitpid(child_pid, &status, WUNTRACED);
-            ptrace(PTRACE_GETREGS, child_pid, NULL, &regs);
-            printf("Child PC = %p\n", (void*)(regs.rip-load_addr));
-            char* func = get_function_from_pc(regs.rip);
-            if(func != NULL) {
-                printf("Function name = %s\n\n", func);
-                free(func);
-            } else {
-                printf("Function name not found\n\n");
-            }
-            ptrace(PTRACE_CONT, child_pid);
-            sleep(3);
+        sample(child_pid);
+        vector* function_names = dictionary_keys(function_dict);
+        for (int i = 0; i < (int)vector_size(function_names); i++) {
+            char* func = vector_get(function_names, i);
+            printf("%s: %f%%\n", func,
+                   (*(int*)dictionary_get(function_dict, func) / total_samples *
+                       100) * 10000000 / 10000000);
         }
-        wait(&status);
     }
     return 0;
 }

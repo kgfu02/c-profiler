@@ -1,4 +1,4 @@
-// Tester file for usign ptrace
+// Tester file that repeatedly loops through 3 different functions and prints its current PC
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>

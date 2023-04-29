@@ -15,7 +15,7 @@
             "request": "launch",
             "cwd": ".",
             "program": "/home/kevingf2/c-profiler/profiler-debug",
-            "args": ["test"],
+            "args": ["test2"],
             "preLaunchTask": "make"
         },
     ],
