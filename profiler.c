@@ -14,7 +14,7 @@
 #include <search.h>
 #include "includes/dictionary.h"
 
-#define MS_BETWEEN_SAMPLES 100
+#define MS_BETWEEN_SAMPLES 1
 
 static pid_t child_pid;
 static int status;
@@ -156,7 +156,6 @@ int main(int argc, char** argv) {
         ptrace(PTRACE_SETOPTIONS, child_pid, NULL, PTRACE_O_TRACESYSGOOD);
         // Continue through exec call
         if (ptrace(PTRACE_CONT, child_pid, NULL, SIGCONT) == -1) perror("CONT");
-        sleep(1);
         sample(child_pid);
         vector* function_names = dictionary_keys(function_dict);
         for (int i = 0; i < (int)vector_size(function_names); i++) {
