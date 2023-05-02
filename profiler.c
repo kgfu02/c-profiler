@@ -22,6 +22,7 @@ static char* filename;
 static unsigned long long load_addr = 0;
 static dictionary* function_dict;
 static double total_samples = 0;
+static int VERBOSE = 0;
 
 void initialise_load_address(int pid) {
     // Assume position independent executable PIE
@@ -95,15 +96,14 @@ void sample(pid_t child_pid) {
     while (true) {
         if (kill(child_pid, SIGSTOP) == -1) perror("kill");
         if (waitpid(child_pid, &status, 0) == -1) perror("wait");
-        if (WIFEXITED(status))
-            return;
+        if (WIFEXITED(status)) return;
         if (ptrace(PTRACE_GETREGS, child_pid, NULL, &regs) == -1)
             perror("GETREGS");
-        printf("Child PC = %p\n", (void*)(regs.rip - load_addr));
+        if (VERBOSE) printf("Child PC = %p\n", (void*)(regs.rip - load_addr));
         char* func = get_function_from_pc(regs.rip);
         if (func != NULL) {
             // printf("%d, %d\n", WIFSIGNALED(status), WTERMSIG(status));
-            printf("Function name = %s\n\n", func);
+            if (VERBOSE) printf("Function name = %s\n\n", func);
             if (!dictionary_contains(function_dict, func)) {
                 int one = 1;
                 // char* copy = malloc(strlen(func)+1);
@@ -116,8 +116,8 @@ void sample(pid_t child_pid) {
             }
             total_samples++;
             free(func);
-        } else {
-            printf("Function name not found\n\n");
+        } else {  // func name not found
+            if (VERBOSE) printf("Function name not found\n\n");
         }
         // if(waitpid(child_pid, &status, WNOHANG) == -1)
         //     perror("wait:");
@@ -131,6 +131,10 @@ int main(int argc, char** argv) {
     if (argc == 1) {
         printf("Usage: ./profiler <target exec> <args...>\n");
         exit(1);
+    }
+    if (strcmp(argv[1], "-verbose") == 0) {
+        VERBOSE = 1;
+        argv += 1;
     }
     // setup
     filename = argv[1];
